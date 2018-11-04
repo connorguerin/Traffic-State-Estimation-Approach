@@ -1,7 +1,6 @@
 import numpy as np
 from DataGenerator import DataGenerator
 from sklearn.linear_model import LinearRegression
-from scipy import optimize
 
 # tolerance for convergence of soln
 error = 0.00000001
@@ -10,38 +9,32 @@ mu = 0.01
 #observation and feature numbers
 n = 2
 p = 5
-
+#generate data points
+data = DataGenerator(n, p)
+X, y, b = data.generatePoints()
 
 def main():
-    #generate data points
-    data = DataGenerator(n, p)
-    X, y, b = data.generatePoints()
-
     # construct constraint matrix A
     A = constraintMatrix()
     # construct initial point
-    x0 = np.absolute(initial_point(X, y))
-
+    x0 = np.absolute(initial_point())
     #resize to account for standard form variables
     x0.resize(2*p, 1, refcheck=False)
     for i in range(0, p):
         x0[i + p] = x0[i] * -1
     #calculate first search direction
-    cfs = np.array(closedFormSolution(x0, A, mu, X, y, b))
+    cfs = np.array(closedFormSolution(x0, A))
     x1 = x0 + cfs
-
-    # print(Fx(x0, X, y, b))
-    # print(Fx(x1, X, y, b))
 
     counter = 0
     #loop until specified tolerance is met
-    while (abs((Fx(x1, X, y, b) - Fx(x0, X, y, b))) > error):
+    while (abs((Fx(x1) - Fx(x0))) > error):
         if counter > 100000:
             print(counter)
-            print(Fx(x1, X, y, b))
+            print(Fx(x1))
             break
         x0 = x1
-        x1 = x1 + closedFormSolution(x1, A, mu, X, y, b)
+        x1 = x1 + closedFormSolution(x1, A)
         counter += 1
 
     print(x1)
@@ -50,21 +43,21 @@ def main():
 
 
 #function for calculating dt
-def closedFormSolution (x, A, mu, observations, responses, true):
+def closedFormSolution (x, A):
     x = np.array(x)
-    X = np.diagflat(x)
+    diagX = np.diagflat(x)
     A = np.array(A)
     e = np.ones(x.size)
     b = beta(mu)
 
-    penaltyTerm = np.array([term*mu for term in np.matmul(np.linalg.inv(X), e)])
-    gradientPhi = np.subtract(gradientFx(x, observations, responses, true).T, penaltyTerm)
-    pterm1 = np.linalg.inv(np.matmul(np.matmul(A,np.matmul(X,X)),A.T))
-    pterm2 = np.matmul(np.matmul(A,np.matmul(X,X)), gradientPhi.T)
+    penaltyTerm = np.array([term*mu for term in np.matmul(np.linalg.inv(diagX), e)])
+    gradientPhi = np.subtract(gradientFx(x).T, penaltyTerm)
+    pterm1 = np.linalg.inv(np.matmul(np.matmul(A,np.matmul(diagX,diagX)),A.T))
+    pterm2 = np.matmul(np.matmul(A,np.matmul(diagX,diagX)), gradientPhi.T)
     p = np.matmul(pterm1, pterm2)
-    denom = np.linalg.norm(np.matmul(X, (gradientPhi.T - np.matmul(A.T, p))))
+    denom = np.linalg.norm(np.matmul(diagX, (gradientPhi.T - np.matmul(A.T, p))))
     if (denom != 0):
-        num = np.matmul(np.matmul(X,X), (gradientPhi.T - np.matmul(A.T, p)))
+        num = np.matmul(np.matmul(diagX,diagX), (gradientPhi.T - np.matmul(A.T, p)))
         num = [(aTerm * b * (-1))/denom for aTerm in num]
         return num
 
@@ -73,15 +66,12 @@ def closedFormSolution (x, A, mu, observations, responses, true):
 
 
 #method for defining function f(x)
-def Fx(xt, observations, responses, b):
-    obs = observations
-    resp = responses
-    xtrue = b
+def Fx(xt):
     delta = 0.01
     gamma = 0.2
     lam = 0.5
-    f = 1/(2*n)*np.linalg.norm((np.matmul(obs, xt[:p])-resp))**2
-    f += delta * (np.linalg.norm((xt[:p] - xtrue))**2)
+    f = 1/(2*n)*np.linalg.norm((np.matmul(X, xt[:p])-y))**2
+    f += delta * (np.linalg.norm((xt[:p] - b))**2)
     mcp = 0
     for xi in range(0, p):
         if (abs(xt[xi]) <= gamma*lam):
@@ -92,12 +82,12 @@ def Fx(xt, observations, responses, b):
     return f
 
 #method for defining the gradient of the objective function
-def gradientFx (xt, observations, responses, b):
+def gradientFx (xt):
     delta = 0.01
     gamma = 0.2
     lam = 0.5
 
-    fPrime = np.matmul(observations.T, (np.matmul(observations, xt[:p]) - responses))
+    fPrime = np.matmul(X.T, (np.matmul(X, xt[:p]) - y))
     fPrime = np.array([x / n for x in fPrime])
     fPrime = np.add(fPrime, 2* delta * (xt[:p] - b))
     mcp = np.zeros(p)
@@ -112,7 +102,6 @@ def gradientFx (xt, observations, responses, b):
 
 #method calculates beta
 def beta (epsilon):
-    #TODO: determine Lipschitz constant based on gradient of function
     L = 50
     return epsilon/(L + 2 * epsilon)
 
@@ -129,11 +118,9 @@ def constraintMatrix ():
                 B[j + 1] = B[j]
                 B[j] = 0
         A = np.vstack((A, B))
-
-
     return A
 
-def initial_point(X, y):
+def initial_point():
     reg = LinearRegression()
     reg.fit(X, y)
 
